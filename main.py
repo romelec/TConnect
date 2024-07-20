@@ -7,8 +7,9 @@ Developed by Vpow 2021-
 import tinyweb
 import machine
 import gc
-import logging
-logging.basicConfig(level=logging.DEBUG)
+#import logging
+from display import display
+#logging.basicConfig(level=logging.DEBUG)
 
 
 import uasyncio as asyncio
@@ -19,7 +20,7 @@ import uasyncio as asyncio
 #handle incoming POST request
 class JSONCommands():
     def post(self, data):
-        logging.info(str(data))
+        print(str(data))
         for i in data:
             sendcommand(i,data[i])
         return 'OK', 200
@@ -99,9 +100,8 @@ def checksum(s):
 
 def init_comms():
     global txmsg
-        
-    logging.info("Comm init")
-    
+
+    print("Comm init")
     txmsg.append(((2,255,255,0,0,0,0,2),100))
     txmsg.append(((2,255,255,1,0,0,1,2,254),100))
     txmsg.append(((2,0,0,0,0,0,2,2,2,250),100))
@@ -130,7 +130,7 @@ def getvalue(v):
 def sendcommand(c,v):
     global txmsg
     msg = [2,0,3,16,0,0,7,1,48,1,0,2]
-    logging.debug("CMD: %s %s",str(c),str(v))
+    print("CMD: %s %s",str(c),str(v))
 
     if(c=='CMD_SETPOINT' and int(v)>0 and int(v)<50):
         msg.append(commands[c])
@@ -150,7 +150,7 @@ def parsemessage(m):
         value = m[15]
         if(code in values):
             values[code] = value
-            logging.debug("%s",str(values))
+            print("%s",str(values))
 
 def comm_error():
     return (comm_errorcounter>=5)
@@ -164,7 +164,7 @@ async def UART_transmitter():
     while True:
         while(len(txmsg) > 0):
             x = txmsg.pop(0)
-            logging.debug("S: %s",bytearray(x[0]))
+            print("S: %s",bytearray(x[0]))
             uart.write(bytearray(x[0]))
             delay=x[1]
             if(delay < 50):
@@ -186,44 +186,44 @@ async def UART_receiver():
             rxdata = rxdata + uart.read()
         elif(rxwait): #nothing received but waited
             rxwait = False
-            logging.info("TIMEOUT")
+            print("TIMEOUT")
             newstart = rxdata.find(b'\x02',1) #it is possible that msglen was garbage and there is still valid message in the buffer, find it
             if(newstart >= 0):
                 rxdata = rxdata[newstart:]
-                logging.debug("TO: %s %s",str(newstart),str(rxdata))
+                print("TO: %s %s",str(newstart),str(rxdata))
             else:
                 rxdata = b''
-                logging.info("FLUSH3")
+                print("FLUSH3")
                 if(comm_errorcounter < 5):
                     comm_errorcounter = comm_errorcounter + 1
-                    logging.info("CER")
-        
+                    print("CER")
+
         bufferlen = len(rxdata)
-        
+
         while(bufferlen > 7):
-            logging.debug("bufferlen: %s",str(bufferlen))
+            print("bufferlen: %s",str(bufferlen))
             if(rxdata[0] == 0x02): #check correct start byte
                 msglen = rxdata[6]
-                logging.debug("msglen: %s",str(msglen))
+                print("msglen: %s",str(msglen))
                 if(bufferlen > 7+msglen): #check if whole message in buffer
-        
+
                     if(checksum(rxdata[1:7+msglen]) == rxdata[7+msglen]):
-                        logging.info("MSGOK")
-                        logging.debug("%s",str(rxdata[:(8+msglen)]))
+                        print("MSGOK")
+                        print("%s",str(rxdata[:(8+msglen)]))
                         parsemessage(rxdata[:(8+msglen)])
                         rxdata = rxdata[(8+msglen):] #remove message from buffer
                         comm_errorcounter = 0
                     else: #wrong checksum
-                        logging.info("CSERR")
+                        print("CSERR")
                         newstart = rxdata.find(b'\x02',1)
                         if(newstart >= 0):
                             rxdata = rxdata[newstart:]
                         else:
                             rxdata = b''
-                            logging.info("FLUSH1")
-                            
+                            print("FLUSH1")
+
                 else: #wait more bytes
-                    logging.info("WAIT")
+                    print("WAIT")
                     rxwait = True
                     break
             else:
@@ -232,10 +232,10 @@ async def UART_receiver():
                     rxdata = rxdata[newstart:]
                 else:
                     rxdata = b''
-                    logging.info("FLUSH2")
+                    print("FLUSH2")
 
             bufferlen = len(rxdata)
-            
+
         await asyncio.sleep_ms(1000)
 
 #--------------------------------------------------------------
@@ -245,7 +245,7 @@ async def mainloop():
     global rssi
     
     while True:
-        logging.info("4s")
+        print("4s")
         
         if sta_if.isconnected(): #rssi can be read only if wifi connected
             if(rssi == 0):
@@ -270,18 +270,39 @@ async def mainloop():
 
 #--------------------------------------------------------------
 
+#--------------------------------------------------------------
+#Display
+disp = display()
+
+async def display_update():
+    while True:
+        if str(UIstate[values[VAL_STATE]]) != 'ON':
+            disp.off()
+        else:
+            disp.on()
+            disp.update(
+                str(values[VAL_SETPOINT]),
+                str(convert_temperature(values[VAL_ROOMTEMP])),
+                str(convert_temperature(values[VAL_OUTDOORTEMP])),
+                str(UImode[values[VAL_MODE]]),
+                str(UIfanmode[values[VAL_FANMODE]]))
+
+        await asyncio.sleep_ms(1000)
+
+#--------------------------------------------------------------
 
 
 #------------------------------------------------------------------------        
 #add coroutines and run
 app.loop.create_task(UART_receiver())
 app.loop.create_task(UART_transmitter())
+app.loop.create_task(display_update())
 app.loop.create_task(mainloop())
 
 try:
     app.run(host='0.0.0.0', port=80)
 except KeyboardInterrupt as e:
-    logging.info(' CTRL+C pressed - terminating...')
+    print(' CTRL+C pressed - terminating...')
     app.shutdown()
     uasyncio.get_event_loop().run_until_complete(all_shutdown())
 #------------------------------------------------------------------------        

@@ -8,11 +8,9 @@ import machine
 import network
 import time
 import config
-import logging
-logging.basicConfig(level=logging.DEBUG)
 
-logging.info("TConnect")
-logging.info("Toshiba Air Conditioner control via UART")
+print("TConnect")
+print("Toshiba Air Conditioner control via UART")
 
 #if not power reset or hard reset, make hard reset
 if(machine.reset_cause() > 2):
@@ -27,10 +25,10 @@ sta_if = network.WLAN(network.STA_IF)
 sta_if.active(True)
 
 if not sta_if.isconnected():
-    logging.info("Connecting to network")
+    print("Connecting to network")
     sta_if.connect(config.WIFISSID, config.WIFIPWD)
     
     while not sta_if.isconnected():
         time.sleep(0.5)
 
-logging.info("Connected:" + str(sta_if.ifconfig()))
+print("Connected:" + str(sta_if.ifconfig()))
